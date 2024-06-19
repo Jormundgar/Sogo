@@ -1,0 +1,139 @@
+version: '2.1'
+
+services:
+
+  serviceregistry:
+    image: 'liorlakhmann/serviceregistry:0.0.1'
+    build:
+      context: .
+      dockerfile: serviceregistry/Dockerfile
+    container_name: eureka
+    ports:
+      - "8761:8761"
+    networks:
+      - backend
+    healthcheck:
+      test: "exit 0"
+
+  gateway:
+    image: 'liorlakhmann/apigateway:0.0.1'
+    build:
+      context: .
+      dockerfile: apigateway/Dockerfile
+    container_name: api-gateway
+    ports:
+      - "8080:8080"
+    depends_on:
+      serviceregistry:
+        condition: service_healthy
+      logstash:
+        condition: service_healthy
+    networks:
+      - backend
+    environment:
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://serviceregistry:8761/eureka/
+    healthcheck:
+      test: "exit 0"
+
+  sms:
+      image: 'liorlakhmann/smsnotify:0.0.1'
+      build:
+        context: .
+        dockerfile: smsnotification/Dockerfile
+      container_name: sms-notification
+      ports:
+        - "8081:8081"
+      depends_on:
+        serviceregistry:
+          condition: service_healthy
+        gateway:
+          condition: service_healthy
+        logstash:
+          condition: service_healthy
+      networks:
+        - backend
+      environment:
+        - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://serviceregistry:8761/eureka/
+
+  email:
+    image: 'liorlakhmann/emailnotify:0.0.1'
+    build:
+      context: .
+      dockerfile: emailnotification/Dockerfile
+    container_name: email-notification
+    ports:
+      - "8082:8082"
+    depends_on:
+      serviceregistry:
+        condition: service_healthy
+      gateway:
+        condition: service_healthy
+      logstash:
+        condition: service_healthy
+    networks:
+      - backend
+    environment:
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://serviceregistry:8761/eureka/
+
+  push:
+    image: 'liorlakhmann/pushnotify:0.0.1'
+    build:
+      context: .
+      dockerfile: pushnotification/Dockerfile
+    container_name: push-notification
+    ports:
+      - "8083:8083"
+    depends_on:
+      serviceregistry:
+        condition: service_healthy
+      gateway:
+        condition: service_healthy
+      logstash:
+        condition: service_healthy
+    networks:
+      - backend
+    environment:
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://serviceregistry:8761/eureka/
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.0
+    container_name: elasticsearch
+    environment:
+      - discovery.type=single-node
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    networks:
+      - backend
+    healthcheck:
+      test: "exit 0"
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:7.17.0
+    container_name: logstash
+    volumes:
+      - ./logstash.conf:/usr/share/logstash/pipeline/logstash.conf
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - backend
+    healthcheck:
+      test: "exit 0"
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:7.17.0
+    container_name: kibana
+    ports:
+      - "5601:5601"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - backend
+
+networks:
+  backend:
+    driver: bridge
+
